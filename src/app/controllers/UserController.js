@@ -29,17 +29,37 @@ class UserController {
       email: Yup.string()
         .email()
         .required(),
-      password: Yup.string().min(6),
+      oldPassword: Yup.string().min(6),
+      password: Yup.string()
+        .min(6)
+        .when('oldPassword', (oldPassword, field) => {
+          return oldPassword ? field.required() : field;
+        }),
+      passwordConfirm: Yup.string().when('password', (password, field) => {
+        return password ? field.required().oneOf([Yup.ref('password')]) : field;
+      }),
     });
+
     if (!(await schema.isValid(req.body))) {
       return res.status(400).json({ error: 'Validation fail' });
     }
-    const user = await User.findOne({ where: { email: req.body.email } });
-    if (!user) {
-      return res.status(400).json({ error: 'User do not exists' });
+
+    const user = await User.findByPk(req.userId);
+    if (user.email !== req.body.email) {
+      const userExists = await User.findOne({
+        where: { email: req.body.email },
+      });
+
+      if (userExists) {
+        return res.status(400).json({ error: 'User already exists.' });
+      }
     }
-    if (!(await user.checkPassword(req.body.password))) {
-      return res.status(400).json({ error: 'Password wrong' });
+
+    if (
+      req.body.oldPassword &&
+      !(await user.checkPassword(req.body.oldPassword))
+    ) {
+      return res.status(401).json({ error: 'Password wrong' });
     }
     const { name, email } = await user.update(req.body);
     return res.json({ name, email });
