@@ -61,8 +61,8 @@ class UserController {
     ) {
       return res.status(401).json({ error: 'Password wrong' });
     }
-    const { name, email } = await user.update(req.body);
-    return res.json({ name, email });
+    const { name, email, avatar_id } = await user.update(req.body);
+    return res.json({ name, email, avatar_id });
   }
 }
 export default new UserController();
