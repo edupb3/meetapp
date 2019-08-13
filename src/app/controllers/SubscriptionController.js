@@ -1,34 +1,79 @@
 import Subscription from '../models/Subscription';
 import Meetup from '../models/Meetup';
 import User from '../models/User';
+import Mail from '../../lib/Mail';
 
 class SubscriptionController {
   async store(req, res) {
     const { user } = req.body;
     const { meetupId } = req.params;
-    const {
-      id,
-      user_id,
-      title,
-      description,
-      location,
-      date,
-    } = await Meetup.findByPk(meetupId);
-    const { name, email } = await User.findByPk(user_id);
+    const meetup = await Meetup.findByPk(meetupId, {
+      include: [
+        {
+          model: User,
+          attributes: ['name', 'email'],
+        },
+      ],
+    });
+
+    if (meetup.past) {
+      return res.status(401).json({
+        error: 'Unable to subscribe to events that have already expired',
+      });
+    }
 
     const subscriber = await User.findAll({
       where: { email: user.email },
       attributes: ['id', 'name', 'email'],
     });
 
+    const checkSubscribe = await Subscription.findOne({
+      where: { user_id: subscriber[0].id, meetup_id: meetupId },
+    });
+
+    if (checkSubscribe) {
+      return res.status(400).json({
+        error: 'User already subscribed to this event',
+      });
+    }
+
+    const checkHour = await Subscription.findOne({
+      where: { user_id: subscriber[0].id },
+      include: [
+        {
+          model: Meetup,
+          where: {
+            date: meetup.date,
+          },
+        },
+      ],
+    });
+
+    if (checkHour) {
+      return res.status(400).json({
+        error: 'User already subscribed to this time in other event',
+      });
+    }
+
     const subscriptionDetails = await Subscription.create({
       user_id: subscriber[0].id,
       meetup_id: meetupId,
     });
 
+    await Mail.sendMail({
+      to: `${meetup.User.name} <${meetup.User.email}>`, // list of receivers
+      template: 'subscription',
+      subject: `${meetup.title} - Nova Inscrição`, // Subject line
+      context: {
+        organizer: meetup.User.name,
+        meetup: meetup.title,
+        user: subscriber[0].name,
+        email: subscriber[0].email,
+      },
+    });
+
     return res.json({
-      meetup: { id, title, description, location, date },
-      organizer: { id: user_id, name, email },
+      meetup,
       subscriber,
       subscriptionDetails,
     });
